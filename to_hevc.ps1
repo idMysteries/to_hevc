@@ -1,7 +1,8 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Initialize variables for tracking space savings
+# Initialize variables for tracking space savings and processed file count
 $totalSpaceSavedMB = 0
+$processedFilesCount = 0
 
 # Determine files to process based on input arguments
 if ($args.Count -eq 0) {
@@ -72,9 +73,10 @@ foreach ($file in $filesToProcess) {
                     if ($outputSizeMB -gt 0) {
                         Write-Host "Original Size: $originalSizeMB MB, Converted Size: $outputSizeMB MB, Space Saved: $spaceSavedMB MB" -ForegroundColor Cyan
                         $totalSpaceSavedMB += $spaceSavedMB
+                        $processedFilesCount++
 
                         $roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
-                        Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB" -ForegroundColor Cyan
+                        Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB (Processed files: $processedFilesCount)" -ForegroundColor Cyan
 
                         # Check the integrity of the output file (e.g., duration, size) before deletion
                         $outputBitrateInfo = ffprobe -v quiet -show_entries format=bit_rate -of default=nk=1:nw=1 $outputFile
@@ -104,7 +106,7 @@ foreach ($file in $filesToProcess) {
     }
 }
 
-# Display the total space saved after processing all files
+# Display the total space saved and the number of processed files after processing all files
 $roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
-Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB" -ForegroundColor Green
+Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB (Processed files: $processedFilesCount)" -ForegroundColor Green
 Write-Host "All files processed." -ForegroundColor Green
