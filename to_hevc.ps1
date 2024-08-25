@@ -74,7 +74,7 @@ foreach ($file in $filesToProcess) {
                         $totalSpaceSavedMB += $spaceSavedMB
 
                         $roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
-                        Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB" -ForegroundColor Green
+                        Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB" -ForegroundColor Cyan
 
                         # Check the integrity of the output file (e.g., duration, size) before deletion
                         $outputBitrateInfo = ffprobe -v quiet -show_entries format=bit_rate -of default=nk=1:nw=1 $outputFile
