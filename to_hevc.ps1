@@ -5,7 +5,6 @@ if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprob
     exit
 }
 
-
 $gpu = ""
 
 $videoControllers = Get-WmiObject Win32_VideoController
@@ -22,7 +21,7 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = "hevc_nvenc"
 } elseif ($gpu -eq "AMD") {
-    $encoder = "hevc_amf -quality quality"
+    $encoder = "hevc_amf", "-quality", "quality"
 } else {
     $encoder = "libx265"
 }
