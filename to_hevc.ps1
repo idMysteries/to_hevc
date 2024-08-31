@@ -15,15 +15,19 @@ foreach ($controller in $videoControllers) {
         break
     } elseif ($controller.Name -like "*AMD*") {
         $gpu = "AMD"
+    } elseif ($controller.Name -like "*Intel*") {
+        $gpu = "Intel"
     }
 }
 
 if ($gpu -eq "NVIDIA") {
-    $encoder = "hevc_nvenc"
+    $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = "hevc_amf", "-quality", "quality"
+    $encoder = @("hevc_amf", "-quality", "quality")
+} elseif ($gpu -eq "Intel") {
+    $encoder = @("hevc_qsv")
 } else {
-    $encoder = "libx265"
+    $encoder = @("libx265")
 }
 
 # Initialize variables for tracking space savings and processed file count
