@@ -1,4 +1,4 @@
-# to_hevc (supports AMD and NVIDIA encoders)
+# to_hevc (supports AMD, NVIDIA and Intel encoders)
 Powershell script is for converting video to HEVC via ffmpeg with a bitrate reduction of about 40%
 
 
