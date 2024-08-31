@@ -5,6 +5,32 @@ if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprob
     exit
 }
 
+$gpu = ""
+$cpu = ""
+
+$videoControllers = Get-WmiObject Win32_VideoController
+
+foreach ($controller in $videoControllers) {
+    if ($controller.Name -like "*NVIDIA*") {
+        $gpu = "NVIDIA"
+    } elseif ($controller.Name -like "*AMD*") {
+        $gpu = "AMD"
+    }
+}
+
+$cpuInfo = Get-WmiObject Win32_Processor
+if ($cpuInfo.Name -like "*AMD*") {
+    $cpu = "AMD"
+}
+
+if ($gpu -eq "NVIDIA") {
+    $encoder = "hevc_nvenc"
+} elseif ($gpu -eq "AMD" -or $cpu -eq "AMD") {
+    $encoder = "hevc_amf -quality quality"
+} else {
+    $encoder = "libx265"
+}
+
 # Initialize variables for tracking space savings and processed file count
 $totalSpaceSavedMB = 0
 $processedFilesCount = 0
@@ -80,7 +106,7 @@ foreach ($file in $filesToProcess) {
     $outputFile = "$($file.DirectoryName)\$($file.BaseName)_HEVC$($file.Extension)"
 
     # Perform the video conversion using ffmpeg
-    ffmpeg -y -i $file.FullName -c:v hevc_amf -quality quality -b:v "$($newBitrate)" -c:a copy -c:s copy -hide_banner $outputFile
+    ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -hide_banner $outputFile
 
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
     $outputDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $outputFile
