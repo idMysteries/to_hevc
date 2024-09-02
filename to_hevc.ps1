@@ -23,7 +23,7 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality")
+    $encoder = @("hevc_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "33", "-vbaq", "1", "-pa_lookahead_buffer_depth", "40", "-pa_caq_strength", "high")
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
@@ -34,12 +34,14 @@ if ($gpu -eq "NVIDIA") {
 $totalSpaceSavedMB = 0
 $processedFilesCount = 0
 
-# Determine files to process based on input arguments
+$imageExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
+
 $filesToProcess = if ($args.Count -eq 0) {
-    Get-ChildItem -File
+    Get-ChildItem -File | Where-Object { $imageExtensions -notcontains $_.Extension.ToLower() }
 } else {
     try {
-        Get-Item -Path $args
+        $files = Get-Item -Path $args
+        $files | Where-Object { $imageExtensions -notcontains $_.Extension.ToLower() }
     } catch {
         Write-Host "Error: One or more files do not exist or cannot be accessed." -ForegroundColor Red
         exit
@@ -54,7 +56,8 @@ foreach ($file in $filesToProcess) {
     }
 
     # Check the number of video streams in the file
-    if ((ffprobe -v quiet -select_streams v -show_entries stream=index -of csv=p=0 $file.FullName).Length -gt 1) {
+    $videoStreamIndexes = (ffprobe -v quiet -select_streams v -show_entries stream=index -of csv=p=0 $file.FullName).TrimEnd(',').Split(",")
+    if ($videoStreamIndexes.Count -gt 1) {
         Write-Host "Skipping file: $($file.Name) because it has more than one video stream." -ForegroundColor Yellow
         continue
     }
@@ -105,7 +108,11 @@ foreach ($file in $filesToProcess) {
     $outputFile = "$($file.DirectoryName)\$($file.BaseName)_HEVC$($file.Extension)"
 
     # Perform the video conversion using ffmpeg
-    ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -hide_banner $outputFile
+    if ($gpu -eq "AMD") {
+        ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -hide_banner $outputFile
+    } else {
+        ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -c:d copy -hide_banner $outputFile
+    }
 
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
     $outputDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $outputFile
@@ -137,7 +144,4 @@ foreach ($file in $filesToProcess) {
     Remove-Item $file.FullName -Force    
 }
 
-# Display the total space saved and the number of processed files after processing all files
-$roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
-Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB (Processed files: $processedFilesCount)" -ForegroundColor Green
 Write-Host "All files processed." -ForegroundColor Green
