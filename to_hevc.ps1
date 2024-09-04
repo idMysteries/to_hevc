@@ -23,11 +23,11 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", "23", "-qp_p", "23", "-pix_fmt", "yuv420p")
+    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", "23", "-qp_p", "23")
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
-    $encoder = @("libx265")
+    $encoder = @("libx265", "-x265-params", "crf=23:ref=6")
 }
 
 # Initialize variables for tracking space savings and processed file count
@@ -111,7 +111,7 @@ foreach ($file in $filesToProcess) {
     if ($gpu -eq "AMD") {
         ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -hide_banner $outputFile
     } else {
-        ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -c:d copy -hide_banner $outputFile
+        ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -c:d copy -map 0 -hide_banner $outputFile
     }
 
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
