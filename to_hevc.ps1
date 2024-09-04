@@ -23,7 +23,7 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "33", "-vbaq", "1", "-pa_lookahead_buffer_depth", "40", "-pa_caq_strength", "high")
+    $encoder = @("hevc_amf", "-quality", "quality", "-level", "5.1", "-qp_i", "23", "-qp_p", "23", "-pix_fmt", "yuv420p")
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
@@ -78,7 +78,7 @@ foreach ($file in $filesToProcess) {
     $videoBitrate = 0
 
     # Check if the bitrate info is empty or null
-    if ([string]::IsNullOrWhiteSpace($videoBitrateInfo)) {
+    if ([string]::IsNullOrWhiteSpace($videoBitrateInfo) -or $videoBitrateInfo -eq "N/A") {
         Write-Host "Video bitrate not found, using overall file bitrate." -ForegroundColor Yellow
         $videoBitrateInfo = ffprobe -v quiet -show_entries format=bit_rate -of default=nk=1:nw=1 $file.FullName
     }
