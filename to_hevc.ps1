@@ -23,7 +23,7 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-level", "5.1", "-qp_i", "23", "-qp_p", "23", "-pix_fmt", "yuv420p")
+    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", "23", "-qp_p", "23", "-pix_fmt", "yuv420p")
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
