@@ -9,4 +9,7 @@ to_hevc
 
 Specific videos:
 to_hevc video1 video2 ...
+
+Set crf (qp_i, qp_p) to 18 and do not remove the original file
+to_hevc -qp 18 -Save
 ```
