@@ -1,3 +1,9 @@
+param (
+    [int]$qp = 23,  # Default value for qp
+    [string[]]$files = @(),  # Array to hold file paths
+    [switch]$Save  # Parameter to save original files
+)
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
@@ -23,25 +29,31 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", "23", "-qp_p", "23")
+    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", $qp, "-qp_p", $qp)
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
-    $encoder = @("libx265", "-x265-params", "crf=23:ref=6")
+    $encoder = @("libx265", "-x265-params", "crf=$qp:ref=6")
 }
 
 # Initialize variables for tracking space savings and processed file count
 $totalSpaceSavedMB = 0
 $processedFilesCount = 0
 
-$imageExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
+# Define a list of extensions to filter out (image, audio, text, and subtitle files)
+$excludedExtensions = @(
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp',          # Image files
+    '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.mka',    # Audio files
+    '.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt',                    # Text files
+    '.srt', '.sub', '.ass', '.vtt'                                      # Subtitle files
+)
 
-$filesToProcess = if ($args.Count -eq 0) {
-    Get-ChildItem -File | Where-Object { $imageExtensions -notcontains $_.Extension.ToLower() }
+$filesToProcess = if ($files.Count -eq 0) {
+    Get-ChildItem -File | Where-Object { $excludedExtensions -notcontains $_.Extension.ToLower() }
 } else {
     try {
-        $files = Get-Item -Path $args
-        $files | Where-Object { $imageExtensions -notcontains $_.Extension.ToLower() }
+        $fileItems = Get-Item -LiteralPath $files
+        $fileItems | Where-Object { $excludedExtensions -notcontains $_.Extension.ToLower() }
     } catch {
         Write-Host "Error: One or more files do not exist or cannot be accessed." -ForegroundColor Red
         exit
@@ -50,14 +62,21 @@ $filesToProcess = if ($args.Count -eq 0) {
 
 foreach ($file in $filesToProcess) {
     # Use ffprobe to check if the file contains a video stream
-    if ((ffprobe -v quiet -select_streams v -show_entries stream=codec_type -of csv=p=0 $file.FullName) -notmatch "video") {
+    $videoStreamCheck = ffprobe -v quiet -select_streams v -show_entries stream=codec_type -of csv=p=0 $file.FullName
+    if (-not $videoStreamCheck -or $videoStreamCheck -notmatch "video") {
         Write-Host "Skipping non-video file: $($file.Name)" -ForegroundColor Yellow
         continue
     }
 
     # Check the number of video streams in the file
-    $videoStreamIndexes = (ffprobe -v quiet -select_streams v -show_entries stream=index -of csv=p=0 $file.FullName).TrimEnd(',').Split(",")
-    if ($videoStreamIndexes.Count -gt 1) {
+    $videoStreamIndexes = ffprobe -v quiet -select_streams v -show_entries stream=index -of csv=p=0 $file.FullName
+    if (-not $videoStreamIndexes) {
+        Write-Host "Skipping file: $($file.Name) due to no video streams found." -ForegroundColor Yellow
+        continue
+    }
+
+    $videoStreamIndexesArray = $videoStreamIndexes.TrimEnd(',').Split(",")
+    if ($videoStreamIndexesArray.Count -gt 1) {
         Write-Host "Skipping file: $($file.Name) because it has more than one video stream." -ForegroundColor Yellow
         continue
     }
@@ -73,46 +92,11 @@ foreach ($file in $filesToProcess) {
 
     Write-Host "Converting file: $($file.Name)" -ForegroundColor Green
 
-    # Retrieve the bitrate of the video stream (not the entire file)
-    $videoBitrateInfo = ffprobe -v quiet -select_streams v:0 -show_entries stream=bit_rate -of default=nk=1:nw=1 $file.FullName
-    $videoBitrate = 0
-
-    # Check if the bitrate info is empty or null
-    if ([string]::IsNullOrWhiteSpace($videoBitrateInfo) -or $videoBitrateInfo -eq "N/A") {
-        Write-Host "Video bitrate not found, using overall file bitrate." -ForegroundColor Yellow
-        $videoBitrateInfo = ffprobe -v quiet -show_entries format=bit_rate -of default=nk=1:nw=1 $file.FullName
-    }
-
-    # Check if the bitrate info is still empty or null
-    if ([string]::IsNullOrWhiteSpace($videoBitrateInfo)) {
-        Write-Host "Warning: Unable to determine bitrate, skipping file: $($file.Name)" -ForegroundColor Yellow
-        continue
-    }
-
-    # Try to parse the bitrate as an integer
-    if ([int]::TryParse(($videoBitrateInfo -replace "\D"), [ref]$videoBitrate)) {
-        # Ensure the bitrate is valid and greater than zero
-        if ($videoBitrate -le 0) {
-            Write-Host "Warning: Invalid video bitrate detected, skipping file: $($file.Name)" -ForegroundColor Yellow
-            continue
-        }
-    } else {
-        Write-Host "Warning: Unable to parse bitrate, skipping file: $($file.Name)" -ForegroundColor Yellow
-        continue
-    }
-
-    # Calculate the new bitrate (60% of the original)
-    $newBitrate = [int]($videoBitrate * 0.6)
-
-    # Define the output file path
+    # Define the temporary output file path
     $outputFile = "$($file.DirectoryName)\$($file.BaseName)_HEVC$($file.Extension)"
 
     # Perform the video conversion using ffmpeg
-    if ($gpu -eq "AMD") {
-        ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -hide_banner $outputFile
-    } else {
-        ffmpeg -y -i $file.FullName -c:v $encoder -b:v "$($newBitrate)" -c:a copy -c:s copy -c:d copy -map 0 -hide_banner $outputFile
-    }
+    ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -map 0 -hide_banner $outputFile
 
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
     $outputDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $outputFile
@@ -126,7 +110,7 @@ foreach ($file in $filesToProcess) {
 
     # Calculate the space savings
     $originalSizeMB = [math]::Round(($file.Length / 1MB), 2)
-    $outputFileInfo = Get-Item $outputFile
+    $outputFileInfo = Get-Item -LiteralPath $outputFile
     $outputSizeMB = [math]::Round(($outputFileInfo.Length / 1MB), 2)
     $spaceSavedMB = [math]::Round(($originalSizeMB - $outputSizeMB), 2)
 
@@ -137,11 +121,11 @@ foreach ($file in $filesToProcess) {
     $roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
     Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB (Processed files: $processedFilesCount)" -ForegroundColor Cyan
 
-    # Check the integrity of the output file (e.g., duration, size) before deletion
-    $outputBitrateInfo = ffprobe -v quiet -show_entries format=bit_rate -of default=nk=1:nw=1 $outputFile
-    $outputBitrate = [int]($outputBitrateInfo -replace "\D")
-
-    Remove-Item $file.FullName -Force    
+    # Remove the original file unless the -Save switch is specified
+    if (-not $Save) {
+        Remove-Item -LiteralPath $file.FullName -Force
+        Rename-Item -LiteralPath $outputFile -NewName $file.Name
+    }
 }
 
 Write-Host "All files processed." -ForegroundColor Green
