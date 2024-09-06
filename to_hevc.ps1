@@ -1,5 +1,5 @@
 param (
-    [int]$qp = 22,  # Default value for qp
+    [int]$qp = 23,  # Default value for qp
     [string[]]$files = @(),  # Array to hold file paths
     [switch]$Save  # Parameter to save original files
 )
@@ -29,11 +29,11 @@ foreach ($controller in $videoControllers) {
 if ($gpu -eq "NVIDIA") {
     $encoder = @("hevc_nvenc")
 } elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", $qp, "-qp_p", $($qp+4))
+    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", $qp, "-qp_p", $($qp+2))
 } elseif ($gpu -eq "Intel") {
     $encoder = @("hevc_qsv")
 } else {
-    $encoder = @("libx265", "-x265-params", "crf=$qp:ref=6")
+    $encoder = @("libx265", "-x265-params", "crf=$($qp):ref=6", "-pix_fmt", "yuv420p10le")
 }
 
 # Initialize variables for tracking space savings and processed file count
