@@ -1,46 +1,38 @@
-param (
-    [int]$qp = 23,  # Default value for qp
-    [string[]]$files = @(),  # Array to hold file paths
-    [switch]$Save  # Parameter to save original files
-)
-
+# Ensure console output uses UTF-8 encoding
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Check if ffmpeg and ffprobe are installed and available in the PATH
 if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
     Write-Host "Error: ffmpeg or ffprobe not found. Please install them and add to PATH." -ForegroundColor Red
     exit
 }
 
-$gpu = ""
+# Default CRF (Constant Rate Factor) value
+$crf = 18.0
+# Flag to determine if the original files should be saved
+$saveOriginals = $false
+# Files to process, initially empty
+$files = @()
 
-$videoControllers = Get-WmiObject Win32_VideoController
-
-foreach ($controller in $videoControllers) {
-    if ($controller.Name -like "*NVIDIA*") {
-        $gpu = "NVIDIA"
-        break
-    } elseif ($controller.Name -like "*AMD*") {
-        $gpu = "AMD"
-    } elseif ($controller.Name -like "*Intel*") {
-        $gpu = "Intel"
+# Parse command line arguments
+foreach ($arg in $args) {
+    if ($arg -match '^-S$') {
+        $saveOriginals = $true
+    } elseif ($arg -match '^-crf=(\d+(\.\d+)?)$') {
+        $crf = [double]$matches[1]
+    } else {
+        $files += $arg
     }
 }
 
-if ($gpu -eq "NVIDIA") {
-    $encoder = @("hevc_nvenc")
-} elseif ($gpu -eq "AMD") {
-    $encoder = @("hevc_amf", "-quality", "quality", "-qp_i", $qp, "-qp_p", $($qp+2))
-} elseif ($gpu -eq "Intel") {
-    $encoder = @("hevc_qsv")
-} else {
-    $encoder = @("libx265", "-x265-params", "crf=$($qp):ref=6", "-pix_fmt", "yuv420p10le")
-}
+# Encoder settings for high-quality HEVC conversion
+$encoder = @("libx265", "-x265-params", "aq-mode=3:crf=$($crf):ref=6:bframes=8", "-pix_fmt", "yuv420p10le")
 
 # Initialize variables for tracking space savings and processed file count
 $totalSpaceSavedMB = 0
 $processedFilesCount = 0
 
-# Define a list of extensions to filter out (image, audio, text, and subtitle files)
+# List of file extensions to exclude from processing
 $excludedExtensions = @(
     '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp',          # Image files
     '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.mka',    # Audio files
@@ -48,16 +40,20 @@ $excludedExtensions = @(
     '.srt', '.sub', '.ass', '.vtt'                                      # Subtitle files
 )
 
+# Determine files to process
 $filesToProcess = if ($files.Count -eq 0) {
+    # If no files specified, process all video files in the current directory
     Get-ChildItem -File | Where-Object { $excludedExtensions -notcontains $_.Extension.ToLower() }
 } else {
-    try {
-        $fileItems = Get-Item -LiteralPath $files
-        $fileItems | Where-Object { $excludedExtensions -notcontains $_.Extension.ToLower() }
-    } catch {
-        Write-Host "Error: One or more files do not exist or cannot be accessed." -ForegroundColor Red
-        exit
-    }
+    # Validate specified files and exclude non-existent ones
+    $files | ForEach-Object {
+        try {
+            Get-Item -Path $_
+        } catch {
+            Write-Host "Error: File '$_' does not exist or cannot be accessed." -ForegroundColor Red
+            $null
+        }
+    } | Where-Object { $_ -and ($excludedExtensions -notcontains $_.Extension.ToLower()) }
 }
 
 foreach ($file in $filesToProcess) {
@@ -98,6 +94,7 @@ foreach ($file in $filesToProcess) {
     # Perform the video conversion using ffmpeg
     ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -map 0 -hide_banner $outputFile
 
+    # Check if the conversion was successful by comparing durations
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
     $outputDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $outputFile
     if ([math]::Abs($originalDuration - $outputDuration) -gt 1) {
@@ -118,11 +115,12 @@ foreach ($file in $filesToProcess) {
     $totalSpaceSavedMB += $spaceSavedMB
     $processedFilesCount++
 
+    # Report total space saved and processed files count
     $roundedTotalSpaceSavedMB = [math]::Round($totalSpaceSavedMB, 2)
     Write-Host "Total space saved: $roundedTotalSpaceSavedMB MB (Processed files: $processedFilesCount)" -ForegroundColor Cyan
 
     # Remove the original file unless the -Save switch is specified
-    if (-not $Save) {
+    if (-not $saveOriginals) {
         Remove-Item -LiteralPath $file.FullName -Force
         Rename-Item -LiteralPath $outputFile -NewName $file.Name
     }
