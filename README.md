@@ -10,6 +10,6 @@ to_hevc
 Specific videos:
 to_hevc video1 video2 ...
 
-Set crf to 18 and do not remove the original file
-to_hevc -crf=18 -S
+Show help:
+to_hevc -h
 ```
