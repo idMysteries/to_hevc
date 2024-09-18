@@ -7,8 +7,28 @@ if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprob
     exit
 }
 
+# Add help function
+function Show-Help {
+    Write-Host "Usage: script.ps1 [-S] [-crf=<value>] [-preset=<value>] [-acodec=<value>] [files]"
+    Write-Host "-S             Save original files after conversion."
+    Write-Host "-crf=<value>    Set the CRF (Constant Rate Factor) value (e.g., -crf=20)."
+    Write-Host "-preset=<value> Set the video preset (e.g., -preset=slow)."
+    Write-Host "-acodec=<value> Set the audio codec (e.g., -acodec=libopus)."
+    Write-Host "files           Optional list of files to process. If omitted, all video files in the current directory will be processed."
+    exit
+}
+
+# Check for help argument
+if ($args -contains "-h" -or $args -contains "-help" -or $args -contains "--help") {
+    Show-Help
+}
+
 # Default CRF (Constant Rate Factor) value
-$crf = 18.0
+$crf = 20.0
+$audioCodec = "libopus"
+$audioBitrate = "192k"
+$videoPreset = "slow"
+
 # Flag to determine if the original files should be saved
 $saveOriginals = $false
 # Files to process, initially empty
@@ -20,13 +40,25 @@ foreach ($arg in $args) {
         $saveOriginals = $true
     } elseif ($arg -match '^-crf=(\d+(\.\d+)?)$') {
         $crf = [double]$matches[1]
+    } elseif ($arg -match '^-preset=(\w+)$') {
+        $videoPreset = $matches[1]
+    } elseif ($arg -match '^-acodec=(\w+)$') {
+        $audioCodec = $matches[1]
     } else {
         $files += $arg
     }
 }
 
+$sao = "sao=1"
+if ($crf -le 16) {
+    $sao = "no-sao=1"
+} elseif ($crf -le 20) {
+    $sao = "limit-sao=1"
+}
+
 # Encoder settings for high-quality HEVC conversion
-$encoder = @("libx265", "-x265-params", "aq-mode=3:crf=$($crf):ref=6:bframes=8", "-pix_fmt", "yuv420p10le")
+$encoder = @("-x265-params", "aq-mode=3:crf=$($crf):ref=4:bframes=8:deblock=-1,-1:$sao")
+$encoder
 
 # Initialize variables for tracking space savings and processed file count
 $totalSpaceSavedMB = 0
@@ -90,9 +122,7 @@ foreach ($file in $filesToProcess) {
 
     # Define the temporary output file path
     $outputFile = "$($file.DirectoryName)\$($file.BaseName)_HEVC$($file.Extension)"
-
-    # Perform the video conversion using ffmpeg
-    ffmpeg -y -i $file.FullName -c:v $encoder -c:a copy -c:s copy -c:d copy -map 0 -hide_banner $outputFile
+    ffmpeg -y -i $file.FullName -c:v libx265 -preset $videoPreset $encoder -pix_fmt yuv420p10le -c:a $audioCodec -b:a $audioBitrate -c:s copy -c:d copy -map 0 -hide_banner $outputFile
 
     # Check if the conversion was successful by comparing durations
     $originalDuration = ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $file.FullName
